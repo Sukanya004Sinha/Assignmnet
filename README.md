@@ -1,6 +1,6 @@
 # Wallet & P2P Transfer Service
 
-A small wallet service where users can hold a balance and send money to each other (peer-to-peer transfers). Built with Spring Boot 3, Java 21, and Postgres. All money is handled as whole paise (integers) — never floats, never decimals — so there's no rounding weirdness.
+A small wallet service where users can hold a balance and send money to each other (peer-to-peer transfers). Built with Spring Boot 3, Java 21, and Postgres. All money is handled as whole paise (integers) never floats, never decimals  so there's no rounding weirdness.
 
 ## Running it locally
 

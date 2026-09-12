@@ -1,46 +1,162 @@
 # Wallet & P2P Transfer Service
 
-A small wallet service where users can hold a balance and send money to each other (peer-to-peer transfers). Built with Spring Boot 3, Java 21, and Postgres. All money is handled as whole paise (integers) never floats, never decimals  so there's no rounding weirdness.
+A simple wallet service that allows users to maintain a balance and transfer money to other users.
 
-## Running it locally
+The application is built using Spring Boot 3, Java 21, and PostgreSQL.
 
-Just one command, no manual setup needed:
+All amounts are stored in paise as integers. The service does not use floating point or decimal values for money, which avoids rounding issues during transfers.
+
+## Running the Application
+
+The application can be started locally with Docker Compose.
 
 ```bash
 docker compose up --build
 ```
 
-This spins up the app on `http://localhost:8080` and a Postgres database on port `5432`. Database tables are created automatically on startup (via Flyway migrations) — nothing to run by hand.
+Once started, the application will be available at:
 
-## How to call the API
-
-Every request needs an `Authorization: Bearer <userId>` header. There's no real authentication here — the token is literally just the user's id — that's intentional since auth wasn't the focus of this exercise.
-
-Here's what you can do:
-
-- **`POST /wallets`** — creates a wallet for the caller if they don't have one yet, or just returns their existing one.
-- **`GET /wallets/{id}`** — check a wallet's current balance.
-- **`POST /transfers`** — send money from one wallet to another. Body looks like `{from, to, amountPaise, idempotencyKey}`.
-- **`GET /transfers/{id}`** — look up the status of a transfer.
-- **`POST /transfers/{id}/reverse`** — undo a completed transfer (send the money back). Body: `{idempotencyKey}`.
-- **`POST /admin/wallets/{id}/seed`** — this one's just for testing. It credits a wallet directly with `{amountPaise}` so you have funds to play with when running the test scripts below. It's not part of the "real" API and isn't meant to be graded.
-
-## Testing it under load
-
-There are three scripts that hammer the API with concurrent requests to prove the important guarantees hold up (no double-spending, no lost money, etc.):
-
-```bash
-scripts/burst-get-or-create.sh    http://localhost:8080 50
-scripts/burst-idempotent-retry.sh http://localhost:8080 30
-scripts/burst-conservation.sh     http://localhost:8080 50
+```text
+http://localhost:8080
 ```
 
-Each one prints a clear PASS or FAIL at the end.
+PostgreSQL runs on port `5432`.
 
-## Keeping an eye on it
+The database is initialized automatically when the application starts. Flyway handles the database migrations, so there is no need to run any SQL scripts manually.
 
-- **Logs** come out as structured JSON on stdout, and every request gets a correlation id (`X-Correlation-Id`) so you can trace a single request through all its log lines.
-- **Metrics** are available at `GET /actuator/prometheus` — the usual request rate/latency stuff, plus a few custom counters that track what's actually happening with money: `wallet.transfers.created`, `wallet.transfers.declined_insufficient_funds`, and `wallet.transfers.idempotent_replay`.
-- **Health check** lives at `GET /actuator/health`.
+## API
 
-For the reasoning behind the design decisions (why this locking approach, where idempotency lives, etc.), check out `WRITEUP.md`.
+Each API request requires the following header:
+
+```text
+Authorization: Bearer <userId>
+```
+
+This project does not implement real authentication. The value in the bearer token is simply treated as the user ID. This keeps the focus on the wallet and transfer functionality.
+
+### Create or Get Wallet
+
+```http
+POST /wallets
+```
+
+Creates a wallet for the current user if one does not already exist.
+
+If the user already has a wallet, the existing wallet is returned.
+
+### Get Wallet
+
+```http
+GET /wallets/{id}
+```
+
+Returns the wallet and its current balance.
+
+### Create Transfer
+
+```http
+POST /transfers
+```
+
+Transfers money from one wallet to another.
+
+Request body:
+
+```json
+{
+  "from": 1,
+  "to": 2,
+  "amountPaise": 1000,
+  "idempotencyKey": "unique-key"
+}
+```
+
+The transfer checks the available balance and prevents the same request from being processed more than once.
+
+### Get Transfer
+
+```http
+GET /transfers/{id}
+```
+
+Returns the current status and details of a transfer.
+
+### Reverse Transfer
+
+```http
+POST /transfers/{id}/reverse
+```
+
+Reverses a completed transfer and returns the money to the original sender.
+
+Request body:
+
+```json
+{
+  "idempotencyKey": "unique-key"
+}
+```
+
+### Seed Wallet
+
+```http
+POST /admin/wallets/{id}/seed
+```
+
+Adds money directly to a wallet for testing purposes.
+
+Request body:
+
+```json
+{
+  "amountPaise": 10000
+}
+```
+
+This endpoint is provided only to make local testing easier. It is not part of the normal wallet API.
+
+## Testing
+
+The project includes scripts that send concurrent requests to the application and verify the main consistency guarantees.
+
+Run them using:
+
+```bash
+scripts/burst-get-or-create.sh http://localhost:8080 50
+scripts/burst-idempotent-retry.sh http://localhost:8080 30
+scripts/burst-conservation.sh http://localhost:8080 50
+```
+
+The scripts test scenarios such as concurrent wallet creation, repeated requests with the same idempotency key, and balance conservation during concurrent transfers.
+
+Each script reports `PASS` or `FAIL` when it finishes.
+
+## Monitoring
+
+The application exposes structured JSON logs through standard output.
+
+Each request receives an `X-Correlation-Id`, which can be used to follow a request across the application logs.
+
+Prometheus metrics are available at:
+
+```text
+GET /actuator/prometheus
+```
+
+Along with standard application metrics such as request rate and response time, the service exposes custom metrics related to wallet transfers:
+
+```text
+wallet.transfers.created
+wallet.transfers.declined_insufficient_funds
+wallet.transfers.idempotent_replay
+```
+
+The application health status is available at:
+
+```text
+GET /actuator/health
+```
+
+## Design Notes
+
+The main design decisions around concurrency, transaction handling, locking, idempotency, and transfer consistency are documented in `WRITEUP.md`.
